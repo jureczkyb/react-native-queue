@@ -259,7 +259,7 @@ export class Queue {
 
       let jobs = this.realm.objects('Job')
         .filtered(initialQuery)
-        .sorted([['priority', true], ['created', false]]);
+        .sorted([['priority', true], ['failed', false], ['created', false]]);
 
       if (jobs.length) {
         nextJob = jobs[0];
@@ -276,7 +276,7 @@ export class Queue {
 
         const allRelatedJobs = this.realm.objects('Job')
           .filtered(allRelatedJobsQuery)
-          .sorted([['priority', true], ['created', false]]);
+          .sorted([['priority', true], ['failed', false], ['created', false]]);
 
         let jobsToMarkActive = allRelatedJobs.slice(0, concurrency);
 
@@ -294,7 +294,7 @@ export class Queue {
         const reselectQuery = concurrentJobIds.map( jobId => 'id == "' + jobId + '"').join(' OR ');
         const reselectedJobs = this.realm.objects('Job')
           .filtered(reselectQuery)
-          .sorted([['priority', true], ['created', false]]);
+          .sorted([['priority', true], ['failed', false], ['created', false]]);
 
         concurrentJobs = reselectedJobs.slice(0, concurrency);
 
