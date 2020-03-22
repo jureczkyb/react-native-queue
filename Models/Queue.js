@@ -34,6 +34,12 @@ export class Queue {
   async init() {
     if (this.realm === null) {
       this.realm = await Database.getRealmInstance();
+
+      this.realm.write(() => {
+        this.realm.objects('Job').forEach(job => {
+          job.cycle = 0;
+        });
+      });
     }
   }
 
@@ -94,6 +100,11 @@ export class Queue {
 
     this.realm.write(() => {
 
+      let cycle = this.realm.objects('Job').min('cycle');
+      if (!cycle) {
+        cycle = 0;
+      }
+
       this.realm.create('Job', {
         id: uuid.v4(),
         name,
@@ -105,7 +116,8 @@ export class Queue {
         active: false,
         timeout: (options.timeout >= 0) ? options.timeout : 25000,
         created: new Date(),
-        failed: null
+        failed: null,
+        cycle: cycle,
       });
 
     });
@@ -259,7 +271,7 @@ export class Queue {
 
       let jobs = this.realm.objects('Job')
         .filtered(initialQuery)
-        .sorted([['priority', true], ['failed', false], ['created', false]]);
+        .sorted([['cycle', false], ['priority', true], ['created', false]]);
 
       if (jobs.length) {
         nextJob = jobs[0];
@@ -276,7 +288,7 @@ export class Queue {
 
         const allRelatedJobs = this.realm.objects('Job')
           .filtered(allRelatedJobsQuery)
-          .sorted([['priority', true], ['failed', false], ['created', false]]);
+          .sorted([['cycle', false], ['priority', true], ['created', false]]);
 
         let jobsToMarkActive = allRelatedJobs.slice(0, concurrency);
 
@@ -294,7 +306,7 @@ export class Queue {
         const reselectQuery = concurrentJobIds.map( jobId => 'id == "' + jobId + '"').join(' OR ');
         const reselectedJobs = this.realm.objects('Job')
           .filtered(reselectQuery)
-          .sorted([['priority', true], ['failed', false], ['created', false]]);
+          .sorted([['cycle', false], ['priority', true], ['created', false]]);
 
         concurrentJobs = reselectedJobs.slice(0, concurrency);
 
@@ -334,7 +346,6 @@ export class Queue {
     this.worker.executeJobLifecycleCallback('onStart', jobName, jobId, jobPayload);
 
     try {
-
       await this.worker.executeJob(job);
 
       // On successful job completion, remove job
@@ -354,6 +365,12 @@ export class Queue {
       let jobData = JSON.parse(job.data);
 
       this.realm.write(() => {
+        // Prevent retry the same job infinitely
+        if (!job.cycle) {
+          job.cycle = 1;
+        } else {
+          job.cycle++;
+        }
 
         // Increment failed attempts number
         if (!jobData.failedAttempts) {
